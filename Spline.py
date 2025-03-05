@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score, recall_score, precision_score
 
 
 def get_sample(index, frame):
@@ -101,9 +102,14 @@ class TimeSeriesModel(nn.Module):
 
         # CNN ветка
         self.conv = nn.Sequential(
-            nn.Conv1d(in_channels=128, out_channels=128, kernel_size=5),
+            nn.Conv1d(in_channels=NUM_FEATURES, out_channels=64, kernel_size=5),
             nn.ReLU(),
+            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=5),
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Conv1d(in_channels=128, out_channels=256, kernel_size=5),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=256, out_channels=256, kernel_size=5),
             nn.ReLU(),
             nn.MaxPool1d(kernel_size=2),
             nn.Flatten()
@@ -116,19 +122,21 @@ class TimeSeriesModel(nn.Module):
 
         # Объединение ветвей
         self.fc_combined = nn.Sequential(
-                nn.Linear(11776, 8),
-                nn.Sigmoid()
+                nn.Linear(10752, 512),
+                nn.Sigmoid(),
+                nn.Linear(512, 1),
+                nn.Sigmoid(),
         )
 
     def forward(self, x):
         # lstm
-        lstm_out, _ = self.lstm(x)
+        # lstm_out, _ = self.lstm(x)
 
         # CNN ветка
-        cnn_out = self.conv(lstm_out.permute(0, 2, 1))  # Изменяем размерность для Conv1D
+        cnn_out = self.conv(x.permute(0, 2, 1))  # Изменяем размерность для Conv1D
 
         # Объединение ветвей
-        combined = torch.relu(self.fc_combined(cnn_out))
+        combined = self.fc_combined(cnn_out)
 
         return combined
 
@@ -145,47 +153,59 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 train_dataset = TimeSeriesDataset(X_train, y_train)
 test_dataset = TimeSeriesDataset(X_test, y_test)
 
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
+models = []
 # Создание модели
-model = TimeSeriesModel()
+for i in range(NUM_CLASSES):
+    model = TimeSeriesModel()
+    models.append(model)
 
-# Определение функции потерь и оптимизатора
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    # Определение функции потерь и оптимизатора
+    criterion = nn.BCELoss()
+    optimizer = optim.NAdam(model.parameters(), lr=0.0001)
 
-# Обучение модели
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model.to(device)
+    # Обучение модели
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
 
-for epoch in range(10):
-    model.train()
-    running_loss = 0.0
-    for inputs, targets in train_loader:
-        inputs, targets = inputs.to(device), targets.to(device)
+    for epoch in range(10):
+        model.train()
+        running_loss = 0.0
+        for inputs, targets in train_loader:
+            inputs, targets = inputs.to(device), targets.to(device)
 
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, targets[:, i].reshape(-1, 1))
+            loss.backward()
+            optimizer.step()
 
-        running_loss += loss.item()
+            running_loss += loss.item()
 
-    print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_loader):.4f}')
+        print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_loader):.4f}')
+    print('___________')
+    break
 
-# Оценка модели
-model.eval()
-correct = 0
-total = 0
-with torch.no_grad():
-    for inputs, targets in test_loader:
-        inputs, targets = inputs.to(device), targets.to(device)
-        outputs = model(inputs)
-        predicted = (outputs > 0.5).float()
-        total += targets.size(0) * NUM_CLASSES
-        correct += (predicted == targets).sum().item()
+iteration = 0
+for model in models:
+    # Оценка модели
+    model.eval()
+    correct = 0
+    total = 0
+    target = []
+    predicted = []
+    with torch.no_grad():
+        for inputs, targets in test_loader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+            predicted.append(int((outputs > 0.7).float()))
+            target.append(int(targets[:, iteration]))
 
-accuracy = correct / total
-print(f'Test Accuracy: {accuracy:.4f}')
+    iteration += 1
+    print(f'accuracy: {accuracy_score(predicted, target)}')
+    print(f'recall:  {recall_score(predicted, target)}')
+    print(f'precision: {precision_score(predicted, target)}')
+    print('_______')
+    break
