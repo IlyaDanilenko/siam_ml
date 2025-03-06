@@ -8,7 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, recall_score, precision_score
+from sklearn.metrics import accuracy_score, recall_score, precision_score, mean_absolute_error
+import math
 
 
 def get_sample(index, frame):
@@ -45,7 +46,7 @@ def generate_data(mode):
             series = np.array(get_sample(idx, df)[['delta_p', 'p_']])
             if len(series) > 2:
                 X.append(series)
-                y.append(np.array(row.iloc[3:11]))
+                y.append(np.array(row.iloc[11:18]))
         except ValueError:
             continue
 
@@ -87,7 +88,7 @@ def prepare_data(X, y):
 class TimeSeriesDataset(Dataset):
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y.astype('int32'), dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
 
     def __len__(self):
         return len(self.X)
@@ -117,7 +118,7 @@ class TimeSeriesModel(nn.Module):
 
         # LSTM ветка
         self.lstm = nn.Sequential(
-            nn.LSTM(input_size=NUM_FEATURES, hidden_size=64, num_layers=4, batch_first=True, bidirectional=True),
+            nn.LSTM(input_size=10752, hidden_size=64, num_layers=4, batch_first=True, bidirectional=True),
         )
 
         # Объединение ветвей
@@ -125,15 +126,13 @@ class TimeSeriesModel(nn.Module):
                 nn.Linear(10752, 512),
                 nn.Sigmoid(),
                 nn.Linear(512, 1),
-                nn.Sigmoid(),
+                # nn.Sigmoid(),
         )
 
     def forward(self, x):
-        # lstm
-        # lstm_out, _ = self.lstm(x)
-
-        # CNN ветка
         cnn_out = self.conv(x.permute(0, 2, 1))  # Изменяем размерность для Conv1D
+
+        lstm_out, _ = self.lstm(cnn_out)
 
         # Объединение ветвей
         combined = self.fc_combined(cnn_out)
@@ -144,17 +143,51 @@ class TimeSeriesModel(nn.Module):
 # Параметры
 TARGET_LENGTH = 100  # Целевая длина временного ряда
 NUM_FEATURES = 2  # Количество признаков в временном ряде (1 для одномерного ряда)
-NUM_CLASSES = 8  # Количество классификационных параметров
+NUM_CLASSES = 7  # количество классификационных параметров
 
 X, y = prepare_data(*generate_data('test'))
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=24)
 
-# Создание датасетов и загрузчиков
-train_dataset = TimeSeriesDataset(X_train, y_train)
-test_dataset = TimeSeriesDataset(X_test, y_test)
+train_datasets = []
+test_datasets = []
+for k in range(NUM_CLASSES):
+    X_nan_ = []
+    y_nan_ = []
+    index_to_save = []
+    for j in range(len(y_train[:, k])):
+        if not math.isnan(y_train[:, k][j]):
+            index_to_save.append(j)
 
-train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    for index in index_to_save:
+        X_nan_.append(X_train[index])
+        y_nan_.append(y_train[:, k][index])
+
+    # Создание датасетов и загрузчиков
+    train_datasets.append(TimeSeriesDataset(X_nan_, y_nan_))
+
+for k in range(NUM_CLASSES):
+    X_nan_ = []
+    y_nan_ = []
+    index_to_save = []
+    for j in range(len(y_test[:, k])):
+        if not math.isnan(y_test[:, k][j]):
+            index_to_save.append(j)
+
+    for index in index_to_save:
+        X_nan_.append(X_test[index])
+        y_nan_.append(y_test[:, k][index])
+
+    # Создание датасетов и загрузчиков
+    test_datasets.append(TimeSeriesDataset(X_nan_, y_nan_))
+
+train_loaders = []
+test_loaders = []
+
+for train in train_datasets:
+    train_loaders.append(DataLoader(train, batch_size=1, shuffle=True))
+for test in test_datasets:
+    test_loaders.append(DataLoader(test, batch_size=1, shuffle=False))
+
 
 models = []
 # Создание модели
@@ -163,7 +196,7 @@ for i in range(NUM_CLASSES):
     models.append(model)
 
     # Определение функции потерь и оптимизатора
-    criterion = nn.BCELoss()
+    criterion = nn.MSELoss()
     optimizer = optim.NAdam(model.parameters(), lr=0.0001)
 
     # Обучение модели
@@ -173,23 +206,24 @@ for i in range(NUM_CLASSES):
     for epoch in range(10):
         model.train()
         running_loss = 0.0
-        for inputs, targets in train_loader:
+        for inputs, targets in test_loaders[i]:
             inputs, targets = inputs.to(device), targets.to(device)
 
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs, targets[:, i].reshape(-1, 1))
+            loss = criterion(outputs, targets.reshape(-1, 1))
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
 
-        print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_loader):.4f}')
-    print('___________')
-    break
+        print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_loaders):.4f}')
+    print(i)
+    # break
 
 iteration = 0
-for model in models:
+for i in range(NUM_CLASSES):
+    model = models[i]
     # Оценка модели
     model.eval()
     correct = 0
@@ -197,15 +231,16 @@ for model in models:
     target = []
     predicted = []
     with torch.no_grad():
-        for inputs, targets in test_loader:
+        for inputs, targets in train_loaders[i]:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
-            predicted.append(int((outputs > 0.7).float()))
-            target.append(int(targets[:, iteration]))
+            predicted.append(float(outputs > 0.7))
+            target.append(float(targets))
 
     iteration += 1
-    print(f'accuracy: {accuracy_score(predicted, target)}')
-    print(f'recall:  {recall_score(predicted, target)}')
-    print(f'precision: {precision_score(predicted, target)}')
+    print(f'mae: {mean_absolute_error(predicted, target)}')
+    # print(f'accuracy: {accuracy_score(predicted, target)}')
+    # print(f'recall:  {recall_score(predicted, target)}')
+    # print(f'precision: {precision_score(predicted, target)}')
     print('_______')
-    break
+    # break
