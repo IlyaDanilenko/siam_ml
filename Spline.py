@@ -123,9 +123,9 @@ class TimeSeriesModel(nn.Module):
 
         # Объединение ветвей
         self.fc_combined = nn.Sequential(
-                nn.Linear(10752, 512),
+                nn.Linear(128, 64),
                 nn.Sigmoid(),
-                nn.Linear(512, 1),
+                nn.Linear(64, 1),
                 # nn.Sigmoid(),
         )
 
@@ -135,7 +135,7 @@ class TimeSeriesModel(nn.Module):
         lstm_out, _ = self.lstm(cnn_out)
 
         # Объединение ветвей
-        combined = self.fc_combined(cnn_out)
+        combined = self.fc_combined(lstm_out)
 
         return combined
 
