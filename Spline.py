@@ -77,11 +77,7 @@ def prepare_data(X, y):
         # Отображение графика
         plt.grid(True)  # Добавляем сетку для удобства восприятия
         plt.show()
-
-    # Нормализация
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_interp.reshape(-1, 1)).reshape(-1, TARGET_LENGTH, NUM_FEATURES)
-    return X_scaled, y
+    return X_interp.reshape(X_interp.shape[0], X_interp.shape[2], X_interp.shape[1]), y
 
 
 # Создание набора данных для PyTorch
@@ -197,13 +193,13 @@ for i in range(NUM_CLASSES):
 
     # Определение функции потерь и оптимизатора
     criterion = nn.MSELoss()
-    optimizer = optim.NAdam(model.parameters(), lr=0.0001)
+    optimizer = optim.NAdam(model.parameters(), lr=0.001)
 
     # Обучение модели
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
-    for epoch in range(10):
+    for epoch in range(20):
         model.train()
         running_loss = 0.0
         for inputs, targets in test_loaders[i]:
@@ -219,7 +215,7 @@ for i in range(NUM_CLASSES):
 
         print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_loaders):.4f}')
     print(i)
-    # break
+    break
 
 iteration = 0
 for i in range(NUM_CLASSES):
@@ -243,4 +239,4 @@ for i in range(NUM_CLASSES):
     # print(f'recall:  {recall_score(predicted, target)}')
     # print(f'precision: {precision_score(predicted, target)}')
     print('_______')
-    # break
+    break
