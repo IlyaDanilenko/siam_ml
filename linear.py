@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import math
 from sklearn.metrics import mean_absolute_error
+from catboost import CatBoostRegressor
 
 
 def get_sample(index, frame):
@@ -61,37 +62,46 @@ for idx in not_nan:
 
 mae = []
 for t in range(len(train)):
-    maes = []
+    degree = 2
+    # model = make_pipeline(
+    #     PolynomialFeatures(degree, include_bias=True),
+    #     CatBoostRegressor(learning_rate=0.1)
+    # )
+    # model.fit(train[t][:, 0].reshape(-1, 1), train[t][:, 1])
 
-    for degree in range(1, 15):
-        model = make_pipeline(
-            PolynomialFeatures(degree, include_bias=False),
-            LinearRegression()
-        )
+    # coef = model.named_steps['linearregression'].intercept_
+    coefficients = np.polyfit(train[t][:, 0], train[t][:, 1], degree)
 
-        model.fit(train[t][:, 0].reshape(-1, 1), train[t][:, 1])
-        y_pred = model.predict(train[t][:, 0].reshape(-1, 1))
+    # Создание полиномиальной функции
+    poly = np.poly1d(coefficients)
 
-        maes.append(mean_absolute_error(y_pred, train[t][:, 1]))
+    derivative = np.polyder(poly)
+    x_fine = np.linspace(train[t][:, 0].min(), train[t][:, 1].max(), 1000)
+    dy_dx = derivative(x_fine)
+    max_growth_idx = np.argmax(dy_dx)
+    max_growth = x_fine[max_growth_idx]
 
-    smallest_mae = min(maes)
-    idx = maes.index(smallest_mae)
+    delta_y = np.diff(poly(x_fine))
+    max_interval_idx = np.argmax(delta_y)
+    max_interval_start = x_fine[:-1][max_interval_idx]
+    max_interval_end = x_fine[1:][max_interval_idx]
 
-    model = make_pipeline(
-        PolynomialFeatures(idx, include_bias=False),
-        LinearRegression()
-    )
+    new_x = []
+    new_y = []
+    for i in range(len(train[t][:, 0])):
+        if train[t][:, 0][i] < max_interval_end:
+            new_x.append(train[t][:, 0][i])
+            new_y.append(train[t][:, 1][i])
 
-    model.fit(train[t][:, 0].reshape(-1, 1), train[t][:, 1])
+    try:
+        coefficients = np.polyfit(new_x, new_y, 1)
 
-    m = []
-    # все коэффициенты
-    for coef in model.named_steps['linearregression'].coef_:
-        m.append(mean_absolute_error([y[t]], [coef]))
-    # свободный член
-    m.append(model.named_steps['linearregression'].intercept_)
+        # Создание полиномиальной функции
+        poly = np.poly1d(coefficients)
 
-    mae.append(min(m))
+        mae.append(mean_absolute_error([coefficients[-1]], [y[t]]))
+    except TypeError:
+        continue
 
 print(sum(mae) / len(mae))
 
