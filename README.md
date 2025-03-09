@@ -25,14 +25,14 @@
 
 Классификация:
 
-1. Некачественное ГДИС - accuracy: , recall: , precision: f1: ;
-2. Влияние ствола скважины  класс - accuracy: , recall: , precision: f1: ;
-3. Радиальный режим класс - accuracy: , recall: , precision: f1: ;
-4. Линейный режим класс - accuracy: , recall: , precision: f1: ;
-5. Билинейный режим класс - accuracy: , recall: , precision: f1: ;
-6. Сферический режим класс - accuracy: , recall: , precision: f1: ;
-7. Граница постоянного давления класс - accuracy: , recall: , precision: f1: ;
-8. Граница непроницаемый разлом класс - accuracy: , recall: , precision: f1: .
+1. Некачественное ГДИС - accuracy: 0.96, recall: 0.88, precision: 0.92,f1: 0.9;
+2. Влияние ствола скважины класс - accuracy: 0.73, recall: 0.99, precision: 0.72, f1: 0.84;
+3. Радиальный режим класс - accuracy: 0.84, recall: 0.95, precision: 0.79, f1: 0.86;
+4. Линейный режим класс - accuracy: 0.91, recall: 0.85, precision: 0.75, f1: 0.81;
+5. Билинейный режим класс - accuracy: 0.91, recall: 0.81, precision: 0.78, f1: 0.79;
+6. Сферический режим класс - accuracy: 0.9, recall: 0.84, precision: 0.73, f1: 0.78;
+7. Граница постоянного давления класс - accuracy: 0.94, recall: 0.85, precision: 0.83, f1: 0.85;
+8. Граница непроницаемый разлом класс - accuracy: 0.94, recall: 0.75, precision: 0.92, f1: 0.83.
    
 Регрессия:
 
